@@ -3,7 +3,6 @@ import Document from "@tiptap/extension-document";
 import Text from "@tiptap/extension-text";
 import { BulletList, OrderedList, ListItem } from "@tiptap/extension-list";
 import {
-  UndoRedo,
   Dropcursor,
   Gapcursor,
   CharacterCount,
@@ -44,7 +43,6 @@ export const tiptapExtensions = (options?: Partial<TiptapExtensionOptions>) => {
     Paragraph,
     Document,
     Text,
-    UndoRedo,
     Heading.configure({
       levels: tiptapExtension.heading.level,
     }),

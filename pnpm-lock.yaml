@@ -104,6 +104,9 @@ importers:
       axios:
         specifier: ^1.13.5
         version: 1.13.5
+      lib0:
+        specifier: ^0.2.117
+        version: 0.2.117
       pinia:
         specifier: ^3.0.4
         version: 3.0.4(typescript@5.9.3)(vue@3.5.28(typescript@5.9.3))
@@ -116,6 +119,9 @@ importers:
       vue-router:
         specifier: ^5.0.3
         version: 5.0.3(@vue/compiler-sfc@3.5.28)(pinia@3.0.4(typescript@5.9.3)(vue@3.5.28(typescript@5.9.3)))(vue@3.5.28(typescript@5.9.3))
+      y-protocols:
+        specifier: ^1.0.7
+        version: 1.0.7(yjs@13.6.29)
       y-websocket:
         specifier: ^3.0.0
         version: 3.0.0(yjs@13.6.29)
