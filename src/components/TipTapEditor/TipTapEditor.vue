@@ -33,6 +33,7 @@ import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import { Placeholder } from "@tiptap/extensions";
 import { createCollab1Provider } from "@/services/collab1";
+import { getAccessToken } from "@/services/api";
 import { tiptapExtensions } from "@/utils/tiptap";
 
 const model = defineModel<string>({
@@ -51,8 +52,17 @@ const props = withDefaults(
 );
 
 const docId = String(props.docId);
-const wsServer = import.meta.env.VITE_YJS_WS_URL ?? "ws://localhost:3892";
-const accessToken = localStorage.getItem("yjs_docs_access_token") ?? undefined;
+const getDefaultWsServer = () => {
+  if (import.meta.env.DEV) {
+    return "ws://localhost:3892";
+  }
+
+  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${wsProtocol}//${window.location.host}`;
+};
+
+const wsServer = import.meta.env.VITE_YJS_WS_URL || getDefaultWsServer();
+const accessToken = getAccessToken() ?? undefined;
 
 const userName = ref(props.userName || "我");
 const userColor = ref(`#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")}`);
