@@ -19,7 +19,7 @@ const errorMessage = ref("");
 
 const loginForm = ref({
   account: "system",
-  password: "123456",
+  password: "system",
 });
 
 const registerForm = ref({

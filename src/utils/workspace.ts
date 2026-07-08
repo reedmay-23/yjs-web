@@ -5,6 +5,7 @@ export type DocumentRole = "owner" | CollaboratorRole;
 
 export interface DocumentItem {
   id: string;
+  yjsDocId: string;
   title: string;
   summary: string;
   owner: string;
@@ -70,11 +71,30 @@ export const getDocumentId = (document: ApiDocument | unknown) => {
   }
 
   const value = document as ApiDocument;
-  return String(value.id ?? value.docId ?? value.documentId ?? "");
+  return String(value.id ?? value.documentId ?? value.docId ?? "");
+};
+
+export const getYjsDocumentId = (document: ApiDocument | unknown) => {
+  if (!document || typeof document !== "object") {
+    return "";
+  }
+
+  const value = document as ApiDocument;
+  return String(
+    value.yjsDocId ??
+      value.yjsDocumentId ??
+      value.yjsStorageId ??
+      value.storageId ??
+      value.storageDocId ??
+      value.docId ??
+      value.documentId ??
+      value.id ??
+      "",
+  );
 };
 
 export const getStorageDocumentId = (payload: unknown) => {
-  const id = getDocumentId(payload);
+  const id = getYjsDocumentId(payload) || getDocumentId(payload);
   return /^\d+$/.test(id) ? Number(id) : undefined;
 };
 
@@ -153,6 +173,7 @@ export const mapCollaborator = (user: ApiCollaborator): CollaboratorItem => ({
 
 export const mapDocument = (document: ApiDocument, index: number, currentAccount: string): DocumentItem => {
   const id = getDocumentId(document) || String(Date.now() + index);
+  const yjsDocId = getYjsDocumentId(document) || id;
   const title = document.title ?? document.name ?? "未命名文档";
   const ownerProfile = document.owner;
   const owner =
@@ -165,6 +186,7 @@ export const mapDocument = (document: ApiDocument, index: number, currentAccount
 
   return {
     id,
+    yjsDocId,
     title,
     summary: document.summary ?? document.description ?? "协作文档，打开后开始多人实时编辑。",
     owner,

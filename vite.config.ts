@@ -32,6 +32,39 @@ export default defineConfig(({ mode }) => {
             }
         }
     },
+    build: {
+        rollupOptions: {
+            output: {
+                manualChunks(id) {
+                    if (!id.includes('node_modules')) {
+                        return undefined;
+                    }
+
+                    if (id.includes('/naive-ui/') || id.includes('/@css-render/') || id.includes('/vueuc/')) {
+                        return 'vendor-naive';
+                    }
+
+                    if (id.includes('/@tiptap/') || id.includes('/prosemirror-')) {
+                        return 'vendor-tiptap';
+                    }
+
+                    if (
+                        id.includes('/yjs/') ||
+                        id.includes('/y-protocols/') ||
+                        id.includes('/lib0/')
+                    ) {
+                        return 'vendor-yjs';
+                    }
+
+                    if (id.includes('/vue/') || id.includes('/vue-router/')) {
+                        return 'vendor-vue';
+                    }
+
+                    return 'vendor';
+                },
+            },
+        },
+    },
 
     }
 })

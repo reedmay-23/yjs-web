@@ -6,15 +6,31 @@ import { createEncoder, length, toUint8Array, writeVarUint, writeVarUint8Array }
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
+const MESSAGE_PRESENCE = 2;
 
-type CollabStatus = "connecting" | "connected" | "disconnected";
+export type CollabStatus = "connecting" | "connected" | "disconnected";
+
+export type OnlinePresenceUser = {
+  id: number;
+  username?: string;
+  account?: string;
+};
+
+export type OnlineUsersChangedEvent = {
+  type: "onlineUsersChanged";
+  docId: string;
+  count: number;
+  users: OnlinePresenceUser[];
+};
 
 type CreateCollab1ProviderOptions = {
   baseWsUrl: string;
   docId: string | number;
   accessToken?: string;
+  enablePresence?: boolean;
   ydoc: Y.Doc;
   onStatus?: (status: CollabStatus) => void;
+  onPresence?: (event: OnlineUsersChangedEvent) => void;
   onConnectionError?: (event: Event) => void;
   onClose?: (event: CloseEvent) => void;
 };
@@ -31,8 +47,10 @@ export const createCollab1Provider = ({
   baseWsUrl,
   docId,
   accessToken,
+  enablePresence = false,
   ydoc,
   onStatus,
+  onPresence,
   onConnectionError,
   onClose,
 }: CreateCollab1ProviderOptions): Collab1Provider => {
@@ -43,6 +61,10 @@ export const createCollab1Provider = ({
 
   if (accessToken) {
     wsUrl.searchParams.set("accessToken", accessToken);
+  }
+
+  if (enablePresence) {
+    wsUrl.searchParams.set("presence", "1");
   }
 
   const ws = new WebSocket(wsUrl);
@@ -74,6 +96,7 @@ export const createCollab1Provider = ({
   };
 
   const handleDocUpdate = (update: Uint8Array, origin: unknown) => {
+    // console.log('监听yjs 变更', update, origin)
     if (origin === ws) {
       return;
     }
@@ -95,6 +118,25 @@ export const createCollab1Provider = ({
     sendAwareness([...added, ...updated, ...removed]);
   };
 
+  const handlePresenceMessage = (decoder: ReturnType<typeof createDecoder>) => {
+    const jsonBytes = readVarUint8Array(decoder);
+    const payload = JSON.parse(new TextDecoder().decode(jsonBytes)) as Partial<OnlineUsersChangedEvent>;
+
+    if (
+      payload.type === "onlineUsersChanged" &&
+      typeof payload.docId === "string" &&
+      typeof payload.count === "number" &&
+      Array.isArray(payload.users)
+    ) {
+      onPresence?.({
+        type: payload.type,
+        docId: payload.docId,
+        count: payload.count,
+        users: payload.users,
+      });
+    }
+  };
+
   ws.onopen = () => {
     onStatus?.("connected");
     sendSyncStep1();
@@ -109,6 +151,7 @@ export const createCollab1Provider = ({
     const decoder = createDecoder(data);
     const encoder = createEncoder();
     const messageType = readVarUint(decoder);
+    // console.log('websocket 数据', decoder, data)
 
     if (messageType === MESSAGE_SYNC) {
       writeVarUint(encoder, MESSAGE_SYNC);
@@ -123,7 +166,15 @@ export const createCollab1Provider = ({
 
     if (messageType === MESSAGE_AWARENESS) {
       applyAwarenessUpdate(awareness, readVarUint8Array(decoder), ws);
+      return;
     }
+
+    if (messageType === MESSAGE_PRESENCE) {
+      handlePresenceMessage(decoder);
+      return;
+    }
+
+    console.warn("Unsupported collab message type:", messageType);
   };
 
   ws.onerror = (event) => {

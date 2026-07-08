@@ -1,8 +1,8 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import TiptapToolbarGroup from "./TipTapToolbarGroup.vue";
 import TiptapToolbarButton from "./TiptapToolbarButton.vue";
 import { EditorContent, useEditor } from "@tiptap/vue-3";
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import IconArrowBackUp from "~icons/tabler/arrow-back-up";
 import IconArrowForwardUp from "~icons/tabler/arrow-forward-up";
 import IconBlockquote from "~icons/tabler/blockquote";
@@ -32,7 +32,7 @@ import * as Y from "yjs";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import { Placeholder } from "@tiptap/extensions";
-import { createCollab1Provider } from "@/services/collab1";
+import { createCollab1Provider, type CollabStatus, type OnlineUsersChangedEvent } from "@/services/collab1";
 import { getAccessToken } from "@/services/api";
 import { tiptapExtensions } from "@/utils/tiptap";
 
@@ -47,9 +47,14 @@ const props = withDefaults(
     userName?: string;
   }>(),
   {
-    userName: "我",
+    userName: "用户",
   },
 );
+
+const emit = defineEmits<{
+  (event: "collab-connected"): void;
+  (event: "online-users-changed", payload: OnlineUsersChangedEvent): void;
+}>();
 
 const docId = String(props.docId);
 const getDefaultWsServer = () => {
@@ -64,8 +69,49 @@ const getDefaultWsServer = () => {
 const wsServer = import.meta.env.VITE_YJS_WS_URL || getDefaultWsServer();
 const accessToken = getAccessToken() ?? undefined;
 
-const userName = ref(props.userName || "我");
+const userName = ref(props.userName || "用户");
 const userColor = ref(`#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")}`);
+const connectionStatus = ref<CollabStatus>("connecting");
+const isSlowConnection = ref(false);
+const connectionMessage = ref("正在连接协作服务...");
+const slowConnectionTimer = window.setTimeout(() => {
+  if (connectionStatus.value === "connecting") {
+    isSlowConnection.value = true;
+    connectionMessage.value = "网络较慢，正在等待协作服务响应...";
+  }
+}, 5000);
+
+const clearSlowConnectionTimer = () => {
+  window.clearTimeout(slowConnectionTimer);
+};
+
+const connectionStatusText = computed(() => {
+  if (connectionStatus.value === "connected") {
+    return "协作已连接";
+  }
+
+  if (connectionStatus.value === "disconnected") {
+    return "协作连接已断开";
+  }
+
+  return isSlowConnection.value ? "连接较慢" : "正在连接";
+});
+
+const connectionStatusClass = computed(() => {
+  if (connectionStatus.value === "connected") {
+    return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  }
+
+  if (connectionStatus.value === "disconnected") {
+    return "bg-rose-50 text-rose-700 ring-rose-200";
+  }
+
+  return isSlowConnection.value ? "bg-amber-50 text-amber-700 ring-amber-200" : "bg-sky-50 text-sky-700 ring-sky-200";
+});
+
+const reconnectCollab = () => {
+  window.location.reload();
+};
 
 const yDoc = new Y.Doc();
 const yFragment = yDoc.getXmlFragment("document");
@@ -73,14 +119,41 @@ const provider = createCollab1Provider({
   baseWsUrl: wsServer,
   docId,
   accessToken,
+  enablePresence: true,
   ydoc: yDoc,
   onStatus: (status) => {
-    console.log("collab1 status:", status);
+    connectionStatus.value = status;
+
+    if (status === "connected") {
+      clearSlowConnectionTimer();
+      isSlowConnection.value = false;
+      connectionMessage.value = "多人协作已连接，内容会实时同步。";
+      emit("collab-connected");
+      return;
+    }
+
+    if (status === "disconnected") {
+      clearSlowConnectionTimer();
+      isSlowConnection.value = false;
+      connectionMessage.value = "协作服务连接已断开，请检查网络后重新连接。";
+      return;
+    }
+
+    connectionMessage.value = "正在连接协作服务...";
+  },
+  onPresence: (event) => {
+    emit("online-users-changed", event);
   },
   onConnectionError: (event) => {
+    isSlowConnection.value = false;
+    connectionMessage.value = "协作服务连接失败，请检查网络或稍后重试。";
     console.error("collab1 connection error:", event);
   },
   onClose: (event) => {
+    connectionStatus.value = "disconnected";
+    connectionMessage.value = event.reason
+      ? `协作连接已断开：${event.reason}`
+      : "协作连接已断开，请检查网络后重新连接。";
     console.warn("collab1 closed", { code: event.code, reason: event.reason });
   },
 });
@@ -136,6 +209,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  clearSlowConnectionTimer();
   yDoc.off("update", handleYDocUpdate);
   yFragment.unobserveDeep(handleFragmentChange);
   editorInstance.value?.destroy();
@@ -320,6 +394,22 @@ onBeforeUnmount(() => {
           </TiptapToolbarButton>
         </TiptapToolbarGroup>
       </div>
+      <div class="flex flex-col gap-2 border-t border-slate-100 px-4 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex min-w-0 items-center gap-2">
+          <span :class="['shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ring-1', connectionStatusClass]">
+            {{ connectionStatusText }}
+          </span>
+          <span class="truncate text-slate-500">{{ connectionMessage }}</span>
+        </div>
+        <button
+          v-if="connectionStatus === 'disconnected'"
+          type="button"
+          class="h-8 shrink-0 rounded-md bg-slate-950 px-3 text-xs font-semibold text-white transition hover:bg-slate-800"
+          @click="reconnectCollab"
+        >
+          重新连接
+        </button>
+      </div>
     </div>
 
     <div class="flex min-h-[calc(100vh-180px)] flex-col">
@@ -328,7 +418,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="border-t border-slate-200 bg-slate-50 px-5 py-3 text-right text-sm text-slate-500">
-        {{ editorInstance?.storage.characterCount.characters() }} 字,
+        {{ editorInstance?.storage.characterCount.characters() }} 字
         {{ editorInstance?.storage.characterCount.words() }} words
       </div>
     </div>
@@ -338,3 +428,4 @@ onBeforeUnmount(() => {
 <style lang="scss">
 @use "@/assets/css/tiptap.scss" as *;
 </style>
+

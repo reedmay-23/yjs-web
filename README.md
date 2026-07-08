@@ -10,8 +10,8 @@ Local defaults are in `.env.local`. Keep `.env.example` as the committed templat
 
 ```env
 VITE_API_BASE_URL=/api
-VITE_API_PROXY_TARGET=http://localhost:3892
-VITE_YJS_WS_URL=ws://localhost:3892
+VITE_API_PROXY_TARGET=http://localhost:3000
+VITE_YJS_WS_URL=ws://localhost:3000
 ```
 
 For server deployment, keep `VITE_API_BASE_URL=/api` and reverse proxy `/api` plus the WebSocket path `/collab1` to the backend service. If `VITE_YJS_WS_URL` is not set during build, production will connect to the current site host with `ws://` or `wss://` automatically.

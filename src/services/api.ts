@@ -53,6 +53,8 @@ export type ApiUserProfile = {
   name?: string;
 };
 
+export type ApiUserSearchItem = ApiUserProfile;
+
 export type ApiCollaborator = {
   id?: string | number;
   userId?: string | number;
@@ -71,6 +73,11 @@ export type ApiDocument = {
   id?: string | number;
   docId?: string | number;
   documentId?: string | number;
+  yjsDocId?: string | number;
+  yjsDocumentId?: string | number;
+  yjsStorageId?: string | number;
+  storageId?: string | number;
+  storageDocId?: string | number;
   title?: string;
   name?: string;
   summary?: string;
@@ -398,6 +405,28 @@ export const removeCollaborator = async (payload: RemoveCollaboratorPayload) => 
 export const updateCollaboratorRole = async (payload: UpdateCollaboratorRolePayload) => {
   const response = await apiClient.post("/document/collaborators/update-role", payload);
   return unwrap<unknown>(response.data);
+};
+
+export const searchUsers = async (keyword: string) => {
+  const response = await apiClient.get("/users/search", {
+    params: { keyword },
+  });
+  const data = unwrap<unknown>(response.data);
+
+  if (Array.isArray(data)) {
+    return data as ApiUserSearchItem[];
+  }
+
+  if (data && typeof data === "object") {
+    const value = data as Record<string, unknown>;
+    const list = value.list ?? value.records ?? value.items ?? value.rows ?? value.users;
+
+    if (Array.isArray(list)) {
+      return list as ApiUserSearchItem[];
+    }
+  }
+
+  return [];
 };
 
 export const getActiveSessions = async (docId: string | number) => {

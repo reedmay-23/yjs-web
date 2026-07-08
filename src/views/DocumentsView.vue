@@ -1,17 +1,15 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import {
   clearAuthTokens,
   createDocument as createDocumentApi,
-  createYjsDocument,
   deleteDocument as deleteDocumentApi,
   getDocumentList,
 } from "@/services/api";
 import { clearCurrentAccount, getCurrentAccount } from "@/utils/session";
 import {
   getApiErrorMessage,
-  getStorageDocumentId,
   mapDocument,
   roleClass,
   roleText,
@@ -105,18 +103,7 @@ const createDocument = async () => {
   errorMessage.value = "";
 
   try {
-    let storageId: number | undefined;
-
-    try {
-      storageId = getStorageDocumentId(await createYjsDocument());
-    } catch (error) {
-      console.warn("创建 Yjs 文档实例失败，继续创建文档元数据", error);
-    }
-
-    const response = await createDocumentApi({
-      id: storageId,
-      title,
-    });
+    const response = await createDocumentApi({ title });
     const newDocument = mapDocument(response, documents.value.length, currentAccount.value);
 
     documents.value.unshift(newDocument);
@@ -352,7 +339,7 @@ onMounted(loadDocuments);
         <div class="mb-5 flex items-start justify-between gap-4">
           <div>
             <h3 class="text-lg font-semibold text-slate-950">创建文档</h3>
-            <p class="mt-1 text-sm text-slate-500">先填写基础信息，确认后再创建文档。</p>
+            <p class="mt-1 text-sm text-slate-500">先填写基础信息，确认后创建文档。</p>
           </div>
           <button
             type="button"
@@ -404,3 +391,4 @@ onMounted(loadDocuments);
     </div>
   </main>
 </template>
+
