@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, useSlots, watch } from "vue";
+import { nextTick, ref, useId, useSlots, watch } from "vue";
 import IconX from "~icons/tabler/x";
 
 const props = withDefaults(defineProps<{
@@ -23,140 +23,101 @@ const emit = defineEmits<{
 }>();
 
 const slots = useSlots();
-const panelRef = ref<HTMLElement | null>(null);
+const dialogRef = ref<HTMLDialogElement | null>(null);
+const titleId = useId();
+const descriptionId = useId();
 const maxWidthClass = {
   sm: "max-w-sm",
   md: "max-w-md",
   lg: "max-w-lg",
-};
-
-let previousActiveElement: HTMLElement | null = null;
-let previousBodyOverflow = "";
+} as const;
 
 const requestClose = () => emit("close");
 
-const handleDocumentKeydown = (event: KeyboardEvent) => {
-  if (!props.open) return;
-
-  if (event.key === "Escape") {
-    event.preventDefault();
-    requestClose();
-    return;
-  }
-
-  if (event.key !== "Tab" || !panelRef.value) return;
-  const focusable = Array.from(panelRef.value.querySelectorAll<HTMLElement>(
-    'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-  ));
-  if (!focusable.length) {
-    event.preventDefault();
-    panelRef.value.focus();
-    return;
-  }
-
-  const first = focusable[0]!;
-  const last = focusable[focusable.length - 1]!;
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  }
+const handleCancel = (event: Event) => {
+  event.preventDefault();
+  requestClose();
 };
 
 watch(() => props.open, async (open) => {
-  if (open) {
-    previousActiveElement = document.activeElement as HTMLElement | null;
-    previousBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    document.addEventListener("keydown", handleDocumentKeydown);
+  await nextTick();
+  const dialog = dialogRef.value;
+  if (!dialog) return;
+
+  if (open && !dialog.open) {
+    dialog.showModal();
     await nextTick();
-    const autofocusElement = panelRef.value?.querySelector<HTMLElement>("[autofocus]");
-    (autofocusElement ?? panelRef.value)?.focus();
-    return;
+    dialog.querySelector<HTMLElement>("[autofocus]")?.focus();
+  } else if (!open && dialog.open) {
+    dialog.close();
   }
-
-  document.removeEventListener("keydown", handleDocumentKeydown);
-  document.body.style.overflow = previousBodyOverflow;
-  previousActiveElement?.focus();
-  previousActiveElement = null;
 }, { immediate: true });
-
-onBeforeUnmount(() => {
-  document.removeEventListener("keydown", handleDocumentKeydown);
-  if (props.open) document.body.style.overflow = previousBodyOverflow;
-});
 </script>
 
 <template>
   <Teleport to="body">
-    <Transition name="app-dialog" appear>
-      <div
-        v-if="open"
-        class="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/30 p-4 backdrop-blur-[2px]"
-        role="presentation"
-        @mousedown.self="closeOnBackdrop && requestClose()"
+    <dialog
+      ref="dialogRef"
+      class="app-dialog-shell fixed inset-0 m-0 h-[100dvh] max-h-none w-screen max-w-none items-center justify-center overflow-hidden border-0 bg-slate-950/30 p-4 backdrop-blur-[2px]"
+      :aria-labelledby="titleId"
+      :aria-describedby="description ? descriptionId : undefined"
+      @cancel="handleCancel"
+      @mousedown.self="closeOnBackdrop && requestClose()"
+    >
+      <section
+        :class="['flex max-h-[calc(100vh-32px)] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/20 outline-none', maxWidthClass[maxWidth]]"
       >
-        <section
-          ref="panelRef"
-          :class="['flex max-h-[calc(100vh-32px)] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/20 outline-none', maxWidthClass[maxWidth]]"
-          role="dialog"
-          aria-modal="true"
-          :aria-label="title"
-          tabindex="-1"
-        >
-          <header class="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
-            <div class="flex min-w-0 items-center gap-3">
-              <slot name="icon" />
-              <div class="min-w-0">
-                <h2 class="text-base font-semibold text-slate-900">{{ title }}</h2>
-                <p v-if="description" class="mt-0.5 text-xs leading-5 text-slate-400">{{ description }}</p>
-              </div>
+        <header class="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
+          <div class="flex min-w-0 items-center gap-3">
+            <slot name="icon" />
+            <div class="min-w-0">
+              <h2 :id="titleId" class="text-base font-semibold text-slate-900">{{ title }}</h2>
+              <p v-if="description" :id="descriptionId" class="mt-0.5 text-xs leading-5 text-slate-400">{{ description }}</p>
             </div>
-            <button
-              v-if="showClose"
-              type="button"
-              class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sky-100"
-              :aria-label="`关闭${title}`"
-              @click="requestClose"
-            >
-              <IconX class="h-5 w-5" />
-            </button>
-          </header>
-
-          <div :class="['min-h-0 flex-1 overflow-y-auto', contentClass]">
-            <slot />
           </div>
+          <button
+            v-if="showClose"
+            type="button"
+            class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sky-100"
+            :aria-label="`关闭${title}`"
+            @click="requestClose"
+          >
+            <IconX class="h-5 w-5" />
+          </button>
+        </header>
 
-          <footer v-if="slots.footer" class="border-t border-slate-100 bg-slate-50 px-5 py-4">
-            <slot name="footer" />
-          </footer>
-        </section>
-      </div>
-    </Transition>
+        <div :class="['min-h-0 flex-1 overflow-y-auto', contentClass]">
+          <slot />
+        </div>
+
+        <footer v-if="slots.footer" class="border-t border-slate-100 bg-slate-50 px-5 py-4">
+          <slot name="footer" />
+        </footer>
+      </section>
+    </dialog>
   </Teleport>
 </template>
 
 <style scoped>
-.app-dialog-enter-active,
-.app-dialog-leave-active {
-  transition: opacity 160ms ease;
+.app-dialog-shell[open] {
+  display: flex;
+  overscroll-behavior: contain;
+  animation: app-dialog-backdrop-in 160ms ease both;
 }
 
-.app-dialog-enter-active section,
-.app-dialog-leave-active section {
-  transition: opacity 160ms ease, transform 160ms ease;
+.app-dialog-shell::backdrop {
+  background: transparent;
 }
 
-.app-dialog-enter-from,
-.app-dialog-leave-to {
-  opacity: 0;
+.app-dialog-shell[open] section {
+  animation: app-dialog-panel-in 160ms ease both;
 }
 
-.app-dialog-enter-from section,
-.app-dialog-leave-to section {
-  opacity: 0;
-  transform: translateY(8px) scale(.98);
+@keyframes app-dialog-backdrop-in {
+  from { background-color: transparent; backdrop-filter: blur(0); }
+}
+
+@keyframes app-dialog-panel-in {
+  from { opacity: 0; transform: translateY(8px) scale(.98); }
 }
 </style>
