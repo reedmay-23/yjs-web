@@ -448,3 +448,19 @@ export const getActiveSessions = async (docId: string | number) => {
 
   return [];
 };
+
+/**
+ * Shared authenticated request entry for the document feature modules.
+ * It deliberately reuses this client's token refresh and expiry handling.
+ */
+export const requestApi = async <T>(config: AxiosRequestConfig): Promise<T> => {
+  const response = await apiClient.request(config);
+  const code = getBusinessCode(response.data);
+
+  if (code !== null && code !== 0) {
+    const payload = response.data as { message?: unknown };
+    throw new Error(typeof payload.message === "string" ? payload.message : "请求失败");
+  }
+
+  return unwrap<T>(response.data);
+};
