@@ -8,6 +8,8 @@
         : 'text-gray-600 hover:bg-blue-50',
     ]"
     :aria-label="label"
+    :title="label"
+    @mousedown.prevent
   >
     <slot />
   </button>
