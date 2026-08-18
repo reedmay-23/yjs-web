@@ -27,6 +27,12 @@ const router = createRouter({
       props: true,
     },
     {
+      path: "/documents/:id/collaboration/:feature?",
+      name: "document-collaboration",
+      component: () => import("@/views/CollaborationWorkspaceView.vue"),
+      props: true,
+    },
+    {
       path: "/:pathMatch(.*)*",
       redirect: "/documents",
     },
