@@ -121,7 +121,22 @@ export const collabApi = {
 };
 
 const defaultWsUrl = () => {
-  if (import.meta.env.DEV) return "ws://localhost:3892/collab-features";
+  // 1. 开发环境：强制连本地
+  if (import.meta.env.DEV) {
+    return "ws://localhost:3892/collab-features";
+  }
+
+  // 2. 生产环境：检查是否有专门配置的后端地址
+  const envUrl = import.meta.env.VITE_COLLAB_FEATURES_WS_URL;
+
+  if (envUrl) {
+    // 如果配置了 (例如 wss://api.myapp.com)，直接用
+    // 这解决了【前后端分离】的问题
+    return envUrl;
+  }
+
+  // 3. 生产环境兜底：假设是同域部署 (Nginx 反向代理)
+  // 这解决了【前后端同域】的问题
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}/collab-features`;
 };
