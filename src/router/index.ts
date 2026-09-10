@@ -10,6 +10,12 @@ const router = createRouter({
       redirect: "/documents",
     },
     {
+      path: "/game",
+      name: "game",
+      component: () => import("@/components/Game/gomoku/gomoku.vue"),
+      meta: { public: true },
+    },
+    {
       path: "/login",
       name: "login",
       component: () => import("@/views/LoginView.vue"),
