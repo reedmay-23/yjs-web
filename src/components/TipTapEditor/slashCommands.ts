@@ -2,7 +2,7 @@ export type SlashCommandId =
   | "paragraph" | "heading1" | "heading2" | "heading3"
   | "bulletList" | "orderedList" | "blockquote" | "codeBlock" | "divider"
   | "table" | "image" | "video"
-  | "whiteboard" | "taskBoard" | "spreadsheet" | "media";
+  | "whiteboard" | "taskBoard" | "spreadsheet" | "media" | "gomoku";
 
 export type SlashCommandItem = {
   id: SlashCommandId;
@@ -32,6 +32,7 @@ export const slashCommands: SlashCommandItem[] = [
   { id: "taskBoard", label: "任务看板", englishName: "Task Board", command: "task-board", aliases: ["kanban", "task"], description: "插入可拖拽任务看板入口", category: "协作内容", badge: "KB" },
   { id: "spreadsheet", label: "协作表格", englishName: "Spreadsheet", command: "spreadsheet", aliases: ["sheet", "cells"], description: "插入公式与数据协作表格入口", category: "协作内容", badge: "FX" },
   { id: "media", label: "媒体标注", englishName: "Media Annotation", command: "media", aliases: ["annotate", "review"], description: "插入图片、视频与音频标注入口", category: "协作内容", badge: "AV" },
+  { id: "gomoku", label: "五子棋", englishName: "Gomoku", command: "gomoku", aliases: ["game", "chess", "wuziqi", "五子棋"], description: "插入与当前文档关联的实时五子棋对战", category: "协作内容", badge: "GK" },
 ];
 
 export const filterSlashCommands = (query: string) => {

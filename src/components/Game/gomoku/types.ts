@@ -17,6 +17,12 @@ export interface Move {
   player: Player
   position: Position
   timestamp: number
+  /**
+   * 落子方所属客户端的 Yjs clientID（仅在线对战写入）。
+   * 悔棋必须靠它判断「最后一手是不是我下的」：只看 player 颜色的话，
+   * 双方渲染同一份合并后的记录，无法区分是谁落的子。
+   */
+  clientId?: number
 }
 
 /** 游戏状态 */

@@ -145,9 +145,15 @@ function drawAllStones(
   padding: number,
 ) {
   for (let row = 0; row < board.length; row++) {
-    for (let col = 0; col < board[row].length; col++) {
-      if (board[row][col] !== 0) {
-        drawStone(ctx, row, col, board[row][col], cellSize, padding)
+    // tsconfig 开启了 noUncheckedIndexedAccess，board[row] 的静态类型是可能为 undefined 的，
+    // 这里先取出整行再判断，既消除类型错误，也避免脏数据导致绘制时报错。
+    const cells = board[row]
+    if (!cells) continue
+
+    for (let col = 0; col < cells.length; col++) {
+      const cell = cells[col] ?? 0
+      if (cell !== 0) {
+        drawStone(ctx, row, col, cell, cellSize, padding)
       }
     }
   }
@@ -268,6 +274,11 @@ watch(() => [props.board, props.lastMove], () => {
   nextTick(render)
 }, { deep: true })
 
+// 监听配置变化 (嵌入模式动态格大小), 重新初始化画布
+watch(() => props.config, () => {
+  nextTick(initCanvas)
+}, { deep: true })
+
 // 窗口resize时重绘
 function handleResize() {
   initCanvas()
@@ -300,5 +311,9 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), inset 0 0 0 3px #8b6914;
   overflow: hidden;
+}
+
+.gomoku-board canvas {
+  display: block;
 }
 </style>

@@ -6,6 +6,7 @@ import MediaPanel from "@/components/Collaboration/MediaPanel.vue";
 import SpreadsheetPanel from "@/components/Collaboration/SpreadsheetPanel.vue";
 import TaskBoardPanel from "@/components/Collaboration/TaskBoardPanel.vue";
 import WhiteboardPanel from "@/components/Collaboration/WhiteboardPanel.vue";
+import GomokuOnlineGame from "@/components/Game/gomoku/GomokuOnlineGame.vue";
 import { getDocumentList } from "@/services/api";
 import { getCurrentAccount } from "@/utils/session";
 import { getApiErrorMessage, mapDocument, toInitials, type DocumentItem } from "@/utils/workspace";
@@ -16,8 +17,9 @@ import IconLayoutKanban from "~icons/tabler/layout-kanban";
 import IconMessageCircle from "~icons/tabler/message-circle";
 import IconPhoto from "~icons/tabler/photo";
 import IconTable from "~icons/tabler/table";
+import IconDeviceGamepad from "~icons/tabler/device-gamepad";
 
-type FeatureKey = "whiteboard" | "chat" | "task-board" | "spreadsheet" | "media";
+type FeatureKey = "whiteboard" | "chat" | "task-board" | "spreadsheet" | "media" | "gomoku";
 
 const route = useRoute();
 const router = useRouter();
@@ -27,7 +29,7 @@ const errorMessage = ref("");
 const currentAccount = getCurrentAccount();
 const routeDocumentId = computed(() => String(route.params.id ?? ""));
 const routeFeature = computed(() => String(route.params.feature ?? "whiteboard"));
-const featureKeys: FeatureKey[] = ["whiteboard", "chat", "task-board", "spreadsheet", "media"];
+const featureKeys: FeatureKey[] = ["whiteboard", "chat", "task-board", "spreadsheet", "media", "gomoku"];
 const activeFeature = computed<FeatureKey>(() => featureKeys.includes(routeFeature.value as FeatureKey) ? routeFeature.value as FeatureKey : "whiteboard");
 const canEdit = computed(() => document.value?.role === "owner" || document.value?.role === "editor");
 
@@ -37,6 +39,7 @@ const features = [
   { key: "task-board" as const, label: "任务看板", description: "任务与进度", icon: IconLayoutKanban, component: TaskBoardPanel },
   { key: "spreadsheet" as const, label: "协作表格", description: "数据与公式", icon: IconTable, component: SpreadsheetPanel },
   { key: "media" as const, label: "媒体标注", description: "音视频审阅", icon: IconPhoto, component: MediaPanel },
+  { key: "gomoku" as const, label: "五子棋", description: "实时对战", icon: IconDeviceGamepad, component: GomokuOnlineGame },
 ];
 const activeConfig = computed<(typeof features)[number]>(() => features.find((item) => item.key === activeFeature.value) ?? features[0]!);
 
@@ -73,7 +76,7 @@ watch(routeDocumentId, loadDocument);
       <header class="z-30 flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm md:px-6">
         <div class="flex min-w-0 items-center gap-3">
           <button type="button" class="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" title="返回文档列表" @click="backToDocuments"><IconArrowLeft class="h-5 w-5" /></button>
-          <div class="min-w-0"><div class="flex items-center gap-2"><h1 class="truncate text-base font-semibold md:text-lg">{{ document.title }}</h1><span class="hidden rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700 sm:inline">协作空间</span></div><p class="truncate text-xs text-slate-500">五类协作工具与当前文档关联</p></div>
+          <div class="min-w-0"><div class="flex items-center gap-2"><h1 class="truncate text-base font-semibold md:text-lg">{{ document.title }}</h1><span class="hidden rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700 sm:inline">协作空间</span></div><p class="truncate text-xs text-slate-500">六类协作工具与当前文档关联</p></div>
         </div>
         <div class="flex items-center gap-3">
           <div class="hidden -space-x-2 sm:flex"><span v-for="collaborator in document.collaborators.slice(0, 4)" :key="collaborator" class="grid h-8 w-8 place-items-center rounded-full border-2 border-white bg-slate-100 text-[10px] font-bold text-slate-700">{{ collaborator }}</span></div>
@@ -92,7 +95,22 @@ watch(routeDocumentId, loadDocument);
           </nav>
           <div class="mt-6 hidden rounded-xl bg-slate-900 p-4 text-white md:block"><p class="text-xs font-semibold">权限状态</p><p class="mt-1.5 text-xs leading-5 text-slate-300">{{ canEdit ? '你可以编辑并实时广播变更。' : '当前为查看权限，聊天仍可正常参与。' }}</p></div>
         </aside>
-        <div class="min-h-0 min-w-0 flex-1"><component :is="activeConfig.component" :key="`${routeDocumentId}-${activeFeature}`" :document-id="routeDocumentId" :can-edit="canEdit" /></div>
+        <div class="min-h-0 min-w-0 flex-1 overflow-auto">
+          <component
+            v-if="activeFeature === 'gomoku'"
+            :is="GomokuOnlineGame"
+            :key="`${routeDocumentId}-gomoku`"
+            :document-id="routeDocumentId"
+            :user-name="currentAccount"
+          />
+          <component
+            v-else
+            :is="activeConfig.component"
+            :key="`${routeDocumentId}-${activeFeature}`"
+            :document-id="routeDocumentId"
+            :can-edit="canEdit"
+          />
+        </div>
       </div>
     </div>
     <div v-else class="grid h-full place-items-center"><button type="button" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white" @click="backToDocuments">返回文档列表</button></div>

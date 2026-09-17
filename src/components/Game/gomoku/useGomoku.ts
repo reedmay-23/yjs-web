@@ -3,7 +3,7 @@
  * 负责: 棋盘状态管理、胜负判断、落子、悔棋、重置
  */
 import { reactive, computed } from 'vue'
-import type { CellState, Player, Position, Move, GameState, BoardConfig } from './types'
+import type { CellState, Position, GameState, BoardConfig } from './types'
 import { DEFAULT_BOARD_CONFIG } from './types'
 
 export function useGomoku(config: BoardConfig = DEFAULT_BOARD_CONFIG) {
@@ -36,10 +36,19 @@ export function useGomoku(config: BoardConfig = DEFAULT_BOARD_CONFIG) {
     return state.winner === 1 ? '黑棋胜' : '白棋胜'
   })
 
+  /**
+   * 读取指定格子的状态。
+   * noUncheckedIndexedAccess 下 state.board[row] 可能是 undefined，统一在这里兜底为 0(空)。
+   */
+  function readCell(row: number, col: number): CellState {
+    if (row < 0 || row >= gridSize || col < 0 || col >= gridSize) return 0
+    return state.board[row]?.[col] ?? 0
+  }
+
   /** 最后一手棋 */
   const lastMove = computed<Position | null>(() => {
-    if (state.history.length === 0) return null
-    return state.history[state.history.length - 1].position
+    const last = state.history[state.history.length - 1]
+    return last ? last.position : null
   })
 
   /**
@@ -52,10 +61,12 @@ export function useGomoku(config: BoardConfig = DEFAULT_BOARD_CONFIG) {
     // 游戏已结束
     if (state.gameOver) return false
     // 该位置已有棋子
-    if (state.board[row][col] !== 0) return false
+    if (readCell(row, col) !== 0) return false
 
     const player = state.currentPlayer
-    state.board[row][col] = player
+    const targetRow = state.board[row]
+    if (!targetRow) return false
+    targetRow[col] = player
     state.moveCount++
 
     state.history.push({
@@ -87,9 +98,14 @@ export function useGomoku(config: BoardConfig = DEFAULT_BOARD_CONFIG) {
   function undoMove(): boolean {
     if (state.history.length === 0) return false
 
-    const lastMove = state.history.pop()!
-    state.board[lastMove.position.row][lastMove.position.col] = 0
-    state.moveCount--
+    const lastMove = state.history.pop()
+    if (!lastMove) return false
+
+    const targetRow = state.board[lastMove.position.row]
+    if (targetRow) {
+      targetRow[lastMove.position.col] = 0
+    }
+    state.moveCount = Math.max(0, state.moveCount - 1)
 
     // 如果游戏已结束, 重新开始当前回合
     if (state.gameOver) {
@@ -131,7 +147,7 @@ export function useGomoku(config: BoardConfig = DEFAULT_BOARD_CONFIG) {
         const nr = row + dr * i
         const nc = col + dc * i
         if (nr < 0 || nr >= gridSize || nc < 0 || nc >= gridSize) break
-        if (state.board[nr][nc] !== player) break
+        if (readCell(nr, nc) !== player) break
         count++
       }
 
@@ -140,7 +156,7 @@ export function useGomoku(config: BoardConfig = DEFAULT_BOARD_CONFIG) {
         const nr = row - dr * i
         const nc = col - dc * i
         if (nr < 0 || nr >= gridSize || nc < 0 || nc >= gridSize) break
-        if (state.board[nr][nc] !== player) break
+        if (readCell(nr, nc) !== player) break
         count++
       }
 

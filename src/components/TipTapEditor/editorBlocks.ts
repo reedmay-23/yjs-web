@@ -7,6 +7,7 @@ const featureMeta: Record<string, { title: string; english: string; badge: strin
   "task-board": { title: "任务看板", english: "Task Board", badge: "KB", description: "拖拽任务卡片并同步项目状态" },
   spreadsheet: { title: "协作表格", english: "Spreadsheet", badge: "FX", description: "协同编辑单元格、公式与校验规则" },
   media: { title: "媒体标注", english: "Media Annotation", badge: "AV", description: "图片、视频和音频的协作审阅" },
+  gomoku: { title: "五子棋", english: "Gomoku", badge: "GK", description: "实时同步的五子棋对战" },
 };
 
 export const CollaborationBlock = Node.create({

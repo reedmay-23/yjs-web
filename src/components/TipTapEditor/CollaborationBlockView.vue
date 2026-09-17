@@ -6,6 +6,7 @@ import MediaPanel from "@/components/Collaboration/MediaPanel.vue";
 import SpreadsheetPanel from "@/components/Collaboration/SpreadsheetPanel.vue";
 import TaskBoardPanel from "@/components/Collaboration/TaskBoardPanel.vue";
 import WhiteboardPanel from "@/components/Collaboration/WhiteboardPanel.vue";
+import GomokuOnlineGame from "@/components/Game/gomoku/GomokuOnlineGame.vue";
 import type { ResourceId } from "@/types/collab-features";
 import IconChevronDown from "~icons/tabler/chevron-down";
 import IconChevronUp from "~icons/tabler/chevron-up";
@@ -25,6 +26,7 @@ const featureMeta = {
   "task-board": { title: "任务看板", english: "Task Board", badge: "KB", component: TaskBoardPanel },
   spreadsheet: { title: "协作表格", english: "Spreadsheet", badge: "FX", component: SpreadsheetPanel },
   media: { title: "媒体标注", english: "Media Annotation", badge: "AV", component: MediaPanel },
+  gomoku: { title: "五子棋", english: "Gomoku", badge: "GK", component: GomokuOnlineGame },
 } as const;
 
 type FeatureKey = keyof typeof featureMeta;

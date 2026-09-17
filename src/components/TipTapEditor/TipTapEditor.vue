@@ -486,6 +486,7 @@ const collaborationFeature: Partial<Record<SlashCommandItem["id"], string>> = {
   taskBoard: "task-board",
   spreadsheet: "spreadsheet",
   media: "media",
+  gomoku: "gomoku",
 };
 
 const executeSlashCommand = async (item: SlashCommandItem) => {
