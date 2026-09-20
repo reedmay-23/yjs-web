@@ -23,6 +23,8 @@ export interface Move {
    * 双方渲染同一份合并后的记录，无法区分是谁落的子。
    */
   clientId?: number
+  /** 落子方的席位 ID（刷新后仍稳定，用于悔棋等双方确认的归属校验） */
+  seatedId?: string
 }
 
 /** 游戏状态 */

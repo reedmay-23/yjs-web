@@ -6,9 +6,9 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { DEFAULT_BOARD_CONFIG, type BoardConfig } from './types'
 import { useGomokuYjs } from './useGomokuYjs'
+import { getCurrentAccount } from '@/utils/session'
 import GomokuBoard from './GomokuBoard.vue'
 import GomokuOnlinePanel from './GomokuOnlinePanel.vue'
-import { dialog } from './uiDialog'
 
 const props = defineProps<{
   /** 文档ID, 用于 Yjs room 的权限校验与隔离 */
@@ -38,14 +38,22 @@ const {
   currentPlayerText,
   winnerText,
   lastMove,
+  seats,
+  pendingUndo,
+  pendingReset,
   placeStone,
-  undoMove,
-  resetGame,
+  joinBattle,
   releaseSeat,
+  requestUndo,
+  cancelUndo,
+  respondUndo,
+  requestReset,
+  cancelReset,
+  respondReset,
 } = useGomokuYjs({
   documentId: props.documentId,
   config: DEFAULT_BOARD_CONFIG,
-  userName: props.userName || '玩家',
+  userName: props.userName || getCurrentAccount(),
 })
 
 /**
@@ -104,17 +112,6 @@ function handlePlace(row: number, col: number) {
   placeStone(row, col)
 }
 
-function handleReset() {
-  dialog.warning({
-    title: '重置棋盘',
-    content: '确定要清空棋盘重新开局吗？此操作会同步给所有玩家。',
-    positiveText: '确定重置',
-    negativeText: '取消',
-    onPositiveClick: () => {
-      resetGame()
-    },
-  })
-}
 </script>
 
 <template>
@@ -143,11 +140,19 @@ function handleReset() {
         :is-spectator="isSpectator"
         :can-undo="canUndo"
         :can-reset="canReset"
+        :seats="seats"
+        :pending-undo="pendingUndo"
+        :pending-reset="pendingReset"
         :connection-status="connectionStatus"
         :connection-message="connectionMessage"
-        @undo="undoMove"
-        @reset="handleReset"
+        @join-battle="joinBattle"
         @release-seat="releaseSeat"
+        @request-undo="requestUndo"
+        @cancel-undo="cancelUndo"
+        @respond-undo="respondUndo"
+        @request-reset="requestReset"
+        @cancel-reset="cancelReset"
+        @respond-reset="respondReset"
       />
     </div>
   </div>
@@ -171,9 +176,8 @@ function handleReset() {
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  align-content: center;
   justify-content: center;
   gap: 16px;
   padding: 16px;
@@ -190,6 +194,7 @@ function handleReset() {
   min-width: 240px;
   max-width: 720px;
   min-height: 0;
+  height: 100%;
   align-self: stretch;
 }
 
@@ -197,7 +202,7 @@ function handleReset() {
   flex: 1;
   width: 100%;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .gomoku-online-game.is-embedded .panel-area :deep(.history-list) {

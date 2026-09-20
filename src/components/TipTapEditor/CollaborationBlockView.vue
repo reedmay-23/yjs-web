@@ -8,6 +8,7 @@ import TaskBoardPanel from "@/components/Collaboration/TaskBoardPanel.vue";
 import WhiteboardPanel from "@/components/Collaboration/WhiteboardPanel.vue";
 import GomokuOnlineGame from "@/components/Game/gomoku/GomokuOnlineGame.vue";
 import type { ResourceId } from "@/types/collab-features";
+import { getCurrentAccount } from "@/utils/session";
 import IconChevronDown from "~icons/tabler/chevron-down";
 import IconChevronUp from "~icons/tabler/chevron-up";
 import IconGripVertical from "~icons/tabler/grip-vertical";
@@ -19,6 +20,7 @@ const props = defineProps<NodeViewProps>();
 const collapsed = ref(false);
 const fullscreen = ref(false);
 const previousBodyOverflow = document.body.style.overflow;
+const currentAccount = getCurrentAccount();
 
 const featureMeta = {
   whiteboard: { title: "协作白板", english: "Collaborative Whiteboard", badge: "WB", component: WhiteboardPanel },
@@ -118,6 +120,7 @@ onBeforeUnmount(() => {
         :is="meta.component"
         :document-id="documentId"
         :resource-id="resourceId"
+        :user-name="currentAccount"
         :can-edit="true"
         embedded
         @resource-ready="bindResource"

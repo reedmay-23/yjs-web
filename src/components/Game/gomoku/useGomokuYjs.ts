@@ -27,6 +27,14 @@ export interface OnlinePlayer {
   color: Player | 0 // 0=观战, 1=黑, 2=白
 }
 
+/** 等待对方响应的双方确认请求（悔棋/重置） */
+export interface PendingRequest {
+  /** 请求是否由本端发起 */
+  byMe: boolean
+  /** 发起方名字，用于确认条展示 */
+  requesterName: string
+}
+
 /** 棋局房间名，与文档正文 Y.Doc 隔离 */
 const GOMOKU_ROOM = 'gomoku'
 
@@ -138,6 +146,8 @@ function readMoves(yHistory: Y.Array<Y.Map<unknown>>): Move[] {
       timestamp: (item.get('timestamp') as number) ?? 0,
       // clientId 用于悔棋判断「最后一手是不是本端下的」，旧数据可能没有该字段。
       clientId: typeof clientId === 'number' ? clientId : undefined,
+      // seatedId 刷新后仍稳定，悔棋双方确认协议用它校验最后一手归属。
+      seatedId: typeof item.get('seatedId') === 'string' ? (item.get('seatedId') as string) : undefined,
     })
   }
 
@@ -161,6 +171,14 @@ export function useGomokuYjs(options: {
   const connectionStatus = ref<CollabStatus>('connecting')
   const connectionMessage = ref('正在连接协作服务...')
   const onlinePlayers = ref<OnlinePlayer[]>([])
+
+  // ── 对战席位与双方确认请求 ──
+  /** 对战两个席位上的玩家名字（null 表示空席） */
+  const seats = ref<{ black: string | null; white: string | null }>({ black: null, white: null })
+  /** 等待对方确认的悔棋请求 */
+  const pendingUndo = ref<PendingRequest | null>(null)
+  /** 等待对方确认的重置请求 */
+  const pendingReset = ref<PendingRequest | null>(null)
 
   // ─ 本地视图状态（全部由 Yjs 推导） ──
   const board = ref<CellState[][]>(createEmptyBoard())
@@ -198,16 +216,27 @@ export function useGomokuYjs(options: {
     () => !gameOver.value && myColor.value !== 0 && myColor.value === currentPlayer.value,
   )
 
+  /** 判断某手记录是否由本席位落下（优先 seatedId，旧数据回退 clientId） */
+  function isMyMove(move: Move): boolean {
+    if (move.seatedId) return move.seatedId === seatedId
+    return move.clientId === ydoc.clientID
+  }
+
+  // 悔棋走双方确认协议：只有最后一手的落子方能发起，且已有请求在等待时不能重复发起。
   const canUndo = computed(() => {
     if (myColor.value === 0 || connectionStatus.value !== 'connected') return false
-
-    // 只有「最后一手是本端落的」才可悔棋，和 undoMove() 的判断保持一致，
-    // 避免按钮可点、点击后却什么都不发生。
+    if (pendingUndo.value) return false
     const last = history.value[history.value.length - 1]
-    return Boolean(last && last.clientId === ydoc.clientID)
+    return Boolean(last && isMyMove(last))
   })
 
-  const canReset = computed(() => history.value.length > 0 && connectionStatus.value === 'connected')
+  const canReset = computed(
+    () =>
+      myColor.value !== 0 &&
+      history.value.length > 0 &&
+      connectionStatus.value === 'connected' &&
+      !pendingReset.value,
+  )
 
   /**
    * 每个标签页在 sessionStorage 里保存一个稳定的座位 ID 作为「我是谁」。
@@ -327,47 +356,104 @@ export function useGomokuYjs(options: {
     } else {
       myColor.value = 0
     }
+
+    refreshSeats()
+    pendingUndo.value = readPendingRequest('undoReqBy', yMeta.get('undoReqMoves') === yHistory.length)
+    pendingReset.value = readPendingRequest('resetReqBy', true)
+  }
+
+  /** 按席位 ID 找在线玩家的名字；本端直接用自己的 userName */
+  function nameBySeatedId(target: string): string | null {
+    if (target === seatedId) return userName
+    if (!provider) return null
+
+    const states = provider.awareness.getStates() as Map<number, Record<string, unknown>>
+    let found: string | null = null
+    states.forEach((state) => {
+      if (state.seatedId === target && typeof state.userName === 'string') {
+        found = state.userName as string
+      }
+    })
+    return found
+  }
+
+  /** 席位名字：空席返回 null，持有人不在线返回「离线玩家」 */
+  function resolveSeatName(seatedIdValue: unknown): string | null {
+    if (typeof seatedIdValue !== 'string') return null
+    return nameBySeatedId(seatedIdValue) ?? '离线玩家'
+  }
+
+  function refreshSeats() {
+    seats.value = {
+      black: resolveSeatName(yMeta.get('blackSeatedId')),
+      white: resolveSeatName(yMeta.get('whiteSeatedId')),
+    }
+  }
+
+  /**
+   * 读取并校验双方确认请求；无效请求（发起方已离席、悔棋请求后又出现了新手）
+   * 直接清掉。清理写在事务里会再触发一次 sync，但清理后条件不成立，不会循环。
+   */
+  function readPendingRequest(byKey: string, movesValid: boolean): PendingRequest | null {
+    const reqBy = yMeta.get(byKey)
+    if (typeof reqBy !== 'string') return null
+
+    const requesterSeated =
+      reqBy === yMeta.get('blackSeatedId') || reqBy === yMeta.get('whiteSeatedId')
+
+    if (!requesterSeated || !movesValid) {
+      ydoc.transact(() => {
+        yMeta.delete(byKey)
+        if (byKey === 'undoReqBy') {
+          yMeta.delete('undoReqAt')
+          yMeta.delete('undoReqMoves')
+        } else {
+          yMeta.delete('resetReqAt')
+        }
+      })
+      return null
+    }
+
+    return {
+      byMe: reqBy === seatedId,
+      requesterName: nameBySeatedId(reqBy) ?? '对方',
+    }
   }
 
   // ── 玩家身份分配 ──
   /**
-   * 身份分配必须在 Yjs 事务里做「读-改-写」，保证并发时只有一个客户端拿到黑棋。
-   * 观战者只读不写，避免所有 tab 都来抢同一个空位。
+   * 点「对战」手动认领空席：默认进入房间是观战，不自动入座。
+   * 认领必须在 Yjs 事务里做「读-改-写」，保证并发时只有一个客户端拿到同一个座位。
    */
-  function ensurePlayerIdentity() {
+  function joinBattle(): boolean {
+    if (connectionStatus.value !== 'connected') return false
+    if (myColor.value !== 0) return false
+
     // 先清掉已断线标签页留下的幽灵座位，再决定自己能否入座。
     cleanupStaleSeats()
 
-    const blackSeatedId = yMeta.get('blackSeatedId')
-    const whiteSeatedId = yMeta.get('whiteSeatedId')
-
-    if (blackSeatedId === seatedId || whiteSeatedId === seatedId) {
-      return
-    }
-
-    // 已经满了就是观战
-    if (blackSeatedId !== undefined && whiteSeatedId !== undefined) {
-      return
-    }
-
-    // 棋局已经开打之后不再补位，避免中途换人导致身份错乱
-    if (yHistory.length > 0) {
-      return
-    }
-
+    let joined = false
     ydoc.transact(() => {
       // 座位和时间戳必须一起写，时间戳用于判断座位是否已经长时间没有主人。
       if (yMeta.get('blackSeatedId') === undefined) {
         yMeta.set('blackSeatedId', seatedId)
         yMeta.set('blackSeatedAt', Date.now())
+        joined = true
         return
       }
 
       if (yMeta.get('whiteSeatedId') === undefined) {
         yMeta.set('whiteSeatedId', seatedId)
         yMeta.set('whiteSeatedAt', Date.now())
+        joined = true
       }
     })
+
+    if (joined) {
+      syncFromYjs()
+      if (provider) syncAwareness(provider.awareness)
+    }
+    return joined
   }
 
   /** 主动申请成为观战者（放弃自己的席位） */
@@ -381,6 +467,17 @@ export function useGomokuYjs(options: {
       if (yMeta.get('whiteSeatedId') === seatedId) {
         yMeta.delete('whiteSeatedId')
         yMeta.delete('whiteSeatedAt')
+      }
+
+      // 离席后我发起但还没被确认的悔棋/重置请求一并撤回
+      if (yMeta.get('undoReqBy') === seatedId) {
+        yMeta.delete('undoReqBy')
+        yMeta.delete('undoReqAt')
+        yMeta.delete('undoReqMoves')
+      }
+      if (yMeta.get('resetReqBy') === seatedId) {
+        yMeta.delete('resetReqBy')
+        yMeta.delete('resetReqAt')
       }
     })
   }
@@ -412,6 +509,7 @@ export function useGomokuYjs(options: {
       // clientId 记录落子的 Yjs 客户端，用于本端悔棋和战绩归属；
       // 注意它与座位 ID 不同，刷新后这个数字会变，所以座位归属改用 seatedId。
       move.set('clientId', ydoc.clientID)
+      move.set('seatedId', seatedId)
       yHistory.push([move])
 
       committed = true
@@ -455,54 +553,142 @@ export function useGomokuYjs(options: {
     return -1
   }
 
-  function undoMove(): boolean {
-    if (connectionStatus.value !== 'connected') return false
-    if (myColor.value === 0) return false
-
-    const moves = history.value
-    const last = moves[moves.length - 1]
-    if (!last) return false
-
-    // 只允许撤销本端自己落下的最后一手，避免把对手的棋子删掉
-    if (last.clientId !== ydoc.clientID) return false
-
-    const { row, col } = last.position
-    const rawIndex = findRawMoveIndex(row, col, last.player)
-    if (rawIndex < 0) return false
+  /** 发起悔棋请求（仅最后一手的落子方可发起），等待对方确认后生效 */
+  function requestUndo(): boolean {
+    if (!canUndo.value) return false
 
     ydoc.transact(() => {
-      yHistory.delete(rawIndex, 1)
-      yBoard.delete(cellKey(row, col))
+      yMeta.set('undoReqBy', seatedId)
+      yMeta.set('undoReqAt', Date.now())
+      // 记录发起时的手数：之后若又出现新手，请求自动失效。
+      yMeta.set('undoReqMoves', yHistory.length)
     })
-
     return true
   }
 
-  // ── 重置棋局 ──
-  function resetGame(): boolean {
-    if (connectionStatus.value !== 'connected') return false
-    if (myColor.value === 0) return false
+  /** 撤回我发起的悔棋请求 */
+  function cancelUndo(): boolean {
+    if (yMeta.get('undoReqBy') !== seatedId) return false
+    clearRequest('undo')
+    return true
+  }
 
+  /** 响应对方的悔棋请求：同意=删除最后一手，拒绝=仅清除请求 */
+  function respondUndo(approve: boolean): boolean {
+    return respondRequest('undo', approve, () => {
+      const last = history.value[history.value.length - 1]
+      if (!last) return false
+
+      const { row, col } = last.position
+      const rawIndex = findRawMoveIndex(row, col, last.player)
+      if (rawIndex < 0) return false
+
+      ydoc.transact(() => {
+        yHistory.delete(rawIndex, 1)
+        yBoard.delete(cellKey(row, col))
+      })
+      return true
+    })
+  }
+
+  /** 对方席位的 seatedId；用于校验确认请求确实来自在座对手 */
+  function opponentSeatedId(): unknown {
+    if (myColor.value === 1) return yMeta.get('whiteSeatedId')
+    if (myColor.value === 2) return yMeta.get('blackSeatedId')
+    return undefined
+  }
+
+  function clearRequest(kind: 'undo' | 'reset') {
+    ydoc.transact(() => {
+      if (kind === 'undo') {
+        yMeta.delete('undoReqBy')
+        yMeta.delete('undoReqAt')
+        yMeta.delete('undoReqMoves')
+      } else {
+        yMeta.delete('resetReqBy')
+        yMeta.delete('resetReqAt')
+      }
+    })
+  }
+
+  /**
+   * 双方确认响应的统一处理：先校验「请求方仍坐在对面席位」且请求仍有效，
+   * 同意则执行动作并清除请求，拒绝则仅清除请求。
+   */
+  function respondRequest(kind: 'undo' | 'reset', approve: boolean, apply: () => boolean): boolean {
+    if (connectionStatus.value !== 'connected' || myColor.value === 0) return false
+
+    const reqBy = yMeta.get(kind === 'undo' ? 'undoReqBy' : 'resetReqBy')
+    if (typeof reqBy !== 'string' || reqBy === seatedId) return false
+    if (reqBy !== opponentSeatedId()) return false
+
+    if (!approve) {
+      clearRequest(kind)
+      return true
+    }
+
+    if (kind === 'undo' && yMeta.get('undoReqMoves') !== yHistory.length) {
+      clearRequest(kind)
+      return false
+    }
+    if (kind === 'reset' && history.value.length === 0) {
+      clearRequest(kind)
+      return false
+    }
+
+    const ok = apply()
+    if (ok) clearRequest(kind)
+    return ok
+  }
+
+  // ── 重置棋局（双方确认） ──
+  /** 清空棋盘与落子记录、保留席位；仅在双方确认通过后执行 */
+  function applyReset() {
     ydoc.transact(() => {
       yBoard.clear()
       yHistory.delete(0, yHistory.length)
       // 重置后保留双方席位；如果对手已离开，先由 cleanupStaleSeats 释放幽灵座位，
-      // 新玩家即可自动入座，也可以点「让出席位」主动放弃。
+      // 新玩家点「对战」即可入座，也可以点「观战」主动放弃。
       yMeta.set('resetAt', Date.now())
       yMeta.set('resetBy', ydoc.clientID)
       // 兼容旧版本数据：座位字段已改用 *_SeatedId，避免遗留的上一个实现字段继续占位。
       yMeta.delete('blackClientId')
       yMeta.delete('whiteClientId')
     })
+  }
 
+  /** 发起重置请求，等待对方确认后生效 */
+  function requestReset(): boolean {
+    if (!canReset.value) return false
+
+    ydoc.transact(() => {
+      yMeta.set('resetReqBy', seatedId)
+      yMeta.set('resetReqAt', Date.now())
+    })
     return true
   }
 
-  /** 让出席位给其他人（自己转为观战） */
+  /** 撤回我发起的重置请求 */
+  function cancelReset(): boolean {
+    if (yMeta.get('resetReqBy') !== seatedId) return false
+    clearRequest('reset')
+    return true
+  }
+
+  /** 响应对方的重置请求：同意=清空重开，拒绝=仅清除请求 */
+  function respondReset(approve: boolean): boolean {
+    return respondRequest('reset', approve, () => {
+      applyReset()
+      return true
+    })
+  }
+
+  /** 离开对战席位（自己转为观战），随时允许；同时撤回我的待确认请求 */
   function releaseSeat(): boolean {
     if (myColor.value === 0) return false
-    if (history.value.length > 0) return false
     spectate()
+    syncFromYjs()
+    if (provider) syncAwareness(provider.awareness)
     return true
   }
 
@@ -521,6 +707,7 @@ export function useGomokuYjs(options: {
     })
 
     onlinePlayers.value = players
+    refreshSeats()
   }
 
   /**
@@ -558,7 +745,8 @@ export function useGomokuYjs(options: {
     if (!provider) return
 
     const awareness = provider.awareness
-    ensurePlayerIdentity()
+    // 默认观战：只清理幽灵座位，不自动入座；入座由「对战」按钮触发。
+    cleanupStaleSeats()
     syncFromYjs()
     syncAwareness(awareness)
     updateOnlinePlayers(awareness)
@@ -650,11 +838,9 @@ export function useGomokuYjs(options: {
     // y-protocols 的 off(name, handler) 需要传回调本身，所以先命名再注册。
     const handleAwarenessChange = () => {
       if (!provider) return
-      // 观战者等待空位：对手离线超过宽限期时，这里能自动补位入座。
-      if (myColor.value === 0) {
-        ensurePlayerIdentity()
-        syncFromYjs()
-      }
+      // 在线状态变化：清理超过宽限期的幽灵座位，空席能及时被「对战」认领。
+      cleanupStaleSeats()
+      syncFromYjs()
       syncAwareness(awareness)
       updateOnlinePlayers(awareness)
     }
@@ -691,6 +877,9 @@ export function useGomokuYjs(options: {
     connectionStatus,
     connectionMessage,
     onlinePlayers,
+    seats,
+    pendingUndo,
+    pendingReset,
     myColor,
     myColorText,
     isMyTurn,
@@ -703,9 +892,14 @@ export function useGomokuYjs(options: {
     lastMove,
     // 操作
     placeStone,
-    undoMove,
-    resetGame,
+    joinBattle,
     releaseSeat,
+    requestUndo,
+    cancelUndo,
+    respondUndo,
+    requestReset,
+    cancelReset,
+    respondReset,
     // 配置
     config,
   }

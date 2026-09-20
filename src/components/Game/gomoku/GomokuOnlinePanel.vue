@@ -1,13 +1,14 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * GomokuOnlinePanel.vue - 在线对战控制面板
  * 显示: 连接状态、我的身份、当前回合、胜负结果、在线玩家、落子记录, 并提供悔棋/重置。
  */
+import { computed } from 'vue'
 import type { Player, CellState, Move } from './types'
-import type { OnlinePlayer } from './useGomokuYjs'
+import type { OnlinePlayer, PendingRequest } from './useGomokuYjs'
 import type { CollabStatus } from '@/services/collab1'
 
-defineProps<{
+const props = defineProps<{
   currentPlayer: Player
   gameOver: boolean
   winner: CellState
@@ -23,13 +24,24 @@ defineProps<{
   canReset: boolean
   connectionStatus: CollabStatus
   connectionMessage: string
+  seats: { black: string | null; white: string | null }
+  pendingUndo: PendingRequest | null
+  pendingReset: PendingRequest | null
 }>()
 
 const emit = defineEmits<{
-  (e: 'undo'): void
-  (e: 'reset'): void
+  (e: 'join-battle'): void
   (e: 'release-seat'): void
+  (e: 'request-undo'): void
+  (e: 'cancel-undo'): void
+  (e: 'respond-undo', approve: boolean): void
+  (e: 'request-reset'): void
+  (e: 'cancel-reset'): void
+  (e: 'respond-reset', approve: boolean): void
 }>()
+
+const spectators = computed(() => props.onlinePlayers.filter((player) => player.color === 0))
+const canJoinBattle = computed(() => props.seats.black === null || props.seats.white === null)
 
 function formatTime(ts: number): string {
   const d = new Date(ts)
@@ -43,12 +55,6 @@ function playerLabel(player: Player): string {
 function coordLabel(row: number, col: number): string {
   const colLabel = String.fromCharCode(65 + col)
   return `${colLabel}${15 - row}`
-}
-
-function colorLabel(color: Player | 0): string {
-  if (color === 1) return '执黑'
-  if (color === 2) return '执白'
-  return '观战'
 }
 
 function colorClass(color: Player | 0): string {
@@ -86,7 +92,7 @@ function statusText(status: CollabStatus): string {
         <span class="font-semibold">{{ myColorText }}</span>
       </div>
       <p v-if="isSpectator" class="identity-hint">
-        双方席位已满，你可以观战；有席位空出时刷新页面即可加入。
+        默认观战；点击「对战」认领空席后即可加入对局。
       </p>
     </div>
 
@@ -103,56 +109,124 @@ function statusText(status: CollabStatus): string {
       </div>
     </div>
 
+    <!-- 双方确认：悔棋 -->
+    <div v-if="pendingUndo" class="confirm-bar">
+      <p class="confirm-hint">
+        {{ pendingUndo.byMe ? '你请求悔棋，等待对方确认...' : `${pendingUndo.requesterName} 请求悔掉最后一手` }}
+      </p>
+      <div class="confirm-actions">
+        <button v-if="pendingUndo.byMe" type="button" class="action-btn" @click="emit('cancel-undo')">
+          撤回请求
+        </button>
+        <template v-else>
+          <button type="button" class="action-btn agree" @click="emit('respond-undo', true)">
+            同意悔棋
+          </button>
+          <button type="button" class="action-btn" @click="emit('respond-undo', false)">
+            拒绝
+          </button>
+        </template>
+      </div>
+    </div>
+
+    <!-- 双方确认：重置 -->
+    <div v-if="pendingReset" class="confirm-bar">
+      <p class="confirm-hint">
+        {{ pendingReset.byMe ? '你请求重置，等待对方确认...' : `${pendingReset.requesterName} 请求清空重新开局` }}
+      </p>
+      <div class="confirm-actions">
+        <button v-if="pendingReset.byMe" type="button" class="action-btn" @click="emit('cancel-reset')">
+          撤回请求
+        </button>
+        <template v-else>
+          <button type="button" class="action-btn agree" @click="emit('respond-reset', true)">
+            同意重置
+          </button>
+          <button type="button" class="action-btn" @click="emit('respond-reset', false)">
+            拒绝
+          </button>
+        </template>
+      </div>
+    </div>
+
     <!-- 操作按钮 -->
     <div class="actions">
       <button
+        v-if="isSpectator"
         type="button"
-        class="action-btn"
-        :disabled="!canUndo"
-        :title="canUndo ? '撤销自己刚刚落下的一手' : '只有轮到自己时才能悔棋'"
-        @click="emit('undo')"
+        class="action-btn primary"
+        :disabled="!canJoinBattle || connectionStatus !== 'connected'"
+        :title="canJoinBattle ? '认领空席，加入对局' : '对战席位已满，只能观战'"
+        @click="emit('join-battle')"
       >
-        ↩ 悔棋
+        ⚔ 对战
       </button>
-      <button
-        type="button"
-        class="action-btn"
-        :disabled="!canReset"
-        title="清空棋盘，重新开局"
-        @click="emit('reset')"
-      >
-        🔄 重置
-      </button>
-      <button
-        v-if="!isSpectator"
-        type="button"
-        class="action-btn"
-        :disabled="history.length > 0"
-        :title="history.length > 0 ? '对局开始后不能更换执子方' : '让出我的席位转为观战'"
-        @click="emit('release-seat')"
-      >
-        👋 让席
-      </button>
+      <template v-else>
+        <button
+          type="button"
+          class="action-btn"
+          title="离开对战席位，转为观战"
+          @click="emit('release-seat')"
+        >
+          👁 观战
+        </button>
+        <button
+          type="button"
+          class="action-btn"
+          :disabled="!canUndo"
+          title="请求撤销自己最后一手，需对方确认后生效"
+          @click="emit('request-undo')"
+        >
+          ↩ 悔棋
+        </button>
+        <button
+          type="button"
+          class="action-btn"
+          :disabled="!canReset"
+          title="请求清空重新开局，需对方确认后生效"
+          @click="emit('request-reset')"
+        >
+          🔄 重置
+        </button>
+      </template>
     </div>
 
-    <!-- 在线玩家 -->
+    <!-- 对战玩家 -->
     <div class="online-section">
       <div class="section-header">
-        <span> 在线玩家</span>
-        <span class="count-badge">{{ onlinePlayers.length }}</span>
+        <span>⚔ 对战玩家</span>
+      </div>
+      <div class="player-list">
+        <div class="player-item">
+          <span :class="['player-dot', colorClass(1)]" />
+          <span class="player-name">{{ seats.black ?? '空席' }}</span>
+          <span class="player-role">黑</span>
+        </div>
+        <div class="player-item">
+          <span :class="['player-dot', colorClass(2)]" />
+          <span class="player-name">{{ seats.white ?? '空席' }}</span>
+          <span class="player-role">白</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 观战列表 -->
+    <div class="online-section">
+      <div class="section-header">
+        <span>👁 观战列表</span>
+        <span class="count-badge">{{ spectators.length }}</span>
       </div>
       <div class="player-list">
         <div
-          v-for="player in onlinePlayers"
+          v-for="player in spectators"
           :key="player.clientId"
           class="player-item"
         >
-          <span :class="['player-dot', colorClass(player.color)]" />
+          <span :class="['player-dot', colorClass(0)]" />
           <span class="player-name">{{ player.name }}</span>
-          <span class="player-role">{{ colorLabel(player.color) }}</span>
         </div>
-        <div v-if="onlinePlayers.length === 0" class="empty-hint">
-          等待玩家加入...
+        <div v-if="spectators.length === 0" class="empty-hint">
+          暂无观战
         </div>
       </div>
     </div>
@@ -197,6 +271,7 @@ function statusText(status: CollabStatus): string {
 
 /* 连接状态 */
 .connection-bar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -212,6 +287,7 @@ function statusText(status: CollabStatus): string {
 }
 
 .connection-message {
+  flex-shrink: 0;
   margin: 0;
   font-size: 11px;
   line-height: 1.5;
@@ -220,6 +296,7 @@ function statusText(status: CollabStatus): string {
 
 /* 我的身份 */
 .my-identity {
+  flex-shrink: 0;
   padding: 10px 12px;
   background: #3a3a3a;
   border-radius: 8px;
@@ -235,6 +312,7 @@ function statusText(status: CollabStatus): string {
 
 /* 状态栏 */
 .status-bar {
+  flex-shrink: 0;
   text-align: center;
   padding: 12px;
   background: #3a3a3a;
@@ -284,6 +362,7 @@ function statusText(status: CollabStatus): string {
 
 /* 操作按钮 */
 .actions {
+  flex-shrink: 0;
   display: flex;
   gap: 8px;
 }
@@ -330,6 +409,7 @@ function statusText(status: CollabStatus): string {
 
 /* 在线玩家 */
 .online-section {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
 }
@@ -382,6 +462,7 @@ function statusText(status: CollabStatus): string {
 
 .history-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   max-height: 280px;
   display: flex;
@@ -439,5 +520,40 @@ function statusText(status: CollabStatus): string {
   color: #666;
   padding: 16px;
   font-size: 13px;
+}
+
+/* 双方确认条 */
+.confirm-bar {
+  flex-shrink: 0;
+  padding: 10px 12px;
+  background: #3a3a3a;
+  border: 1px solid #555;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.confirm-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #f1c40f;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn.primary {
+  border-color: #2ecc71;
+  color: #2ecc71;
+  font-weight: 600;
+}
+
+.action-btn.agree {
+  border-color: #2ecc71;
+  color: #2ecc71;
 }
 </style>
